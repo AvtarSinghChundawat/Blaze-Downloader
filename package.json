@@ -15,13 +15,13 @@
   },
   "dependencies": {
     "@next/swc-win32-x64-msvc": "^16.2.10",
-    "lucide-react": "^0.354.0",
+    "lucide-react": "^0.475.0",
     "next": "16.2.10",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
+    "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
@@ -30,7 +30,7 @@
     "electron-builder": "^26.15.3",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
-    "tailwindcss": "^4",
+    "tailwindcss": "^4.0.0",
     "typescript": "^5",
     "wait-on": "^7.2.0"
   },
