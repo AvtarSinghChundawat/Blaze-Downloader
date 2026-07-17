@@ -1,0 +1,171 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import "tailwindcss";
+
+:root {
+  --background: #0a0d14;       /* Dark charcoal blue backdrop */
+  --foreground: #f8fafc;
+  --card-bg: #151c2c;          /* Solid distinct card color */
+  --card-border: rgba(255, 255, 255, 0.08);
+  --sidebar-bg: #101524;       /* Solid distinct sidebar backdrop */
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --input-bg: #070a10;         /* Embedded input boxes */
+  --input-border: rgba(255, 255, 255, 0.12);
+  --text-primary: #ffffff;
+  --text-secondary: #cbd5e1;
+  --text-muted: #64748b;
+  --header-bg: #101524;        /* Solid distinct header backdrop */
+  --item-bg-hover: rgba(255, 255, 255, 0.05);
+  --border-main: rgba(255, 255, 255, 0.08);
+  --track-bg: #06090e;
+}
+
+.light-mode {
+  --background: #f1f5f9;
+  --foreground: #0f172a;
+  --card-bg: rgba(255, 255, 255, 0.75);
+  --card-border: rgba(0, 0, 0, 0.06);
+  --sidebar-bg: rgba(255, 255, 255, 0.85);
+  --sidebar-border: rgba(0, 0, 0, 0.08);
+  --input-bg: rgba(255, 255, 255, 0.95);
+  --input-border: rgba(0, 0, 0, 0.12);
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #94a3b8;
+  --header-bg: #ffffff;
+  --item-bg-hover: rgba(0, 0, 0, 0.03);
+  --border-main: rgba(0, 0, 0, 0.1);
+  --track-bg: #e2e8f0;
+}
+
+@theme {
+  --font-sans: 'Poppins', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --color-primary: #3b82f6;
+  --color-accent: #06b6d4;
+  --color-glow: rgba(6, 182, 212, 0.4);
+  
+  --color-app-bg: var(--background);
+  --color-app-fg: var(--foreground);
+  --color-app-card: var(--card-bg);
+  --color-app-card-border: var(--card-border);
+  --color-app-sidebar: var(--sidebar-bg);
+  --color-app-sidebar-border: var(--sidebar-border);
+  --color-app-input: var(--input-bg);
+  --color-app-input-border: var(--input-border);
+  --color-app-text-primary: var(--text-primary);
+  --color-app-text-secondary: var(--text-secondary);
+  --color-app-text-muted: var(--text-muted);
+  --color-app-header: var(--header-bg);
+  --color-app-hover: var(--item-bg-hover);
+  --color-app-border: var(--border-main);
+  --color-app-track: var(--track-bg);
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: 'Poppins', sans-serif;
+  overflow-x: hidden;
+  user-select: none;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--background);
+  transition: background-color 0.3s ease;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--input-border);
+  border-radius: 4px;
+  transition: background-color 0.3s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Glassmorphism Classes */
+.glass {
+  background: var(--sidebar-bg);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--sidebar-border);
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.glass-card {
+  background: var(--card-bg);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--card-border);
+  transition: background-color 0.3s ease, border-color 0.3s ease, transform 0.2s ease;
+}
+
+.glass-input {
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  color: var(--text-primary);
+  transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.2s ease;
+}
+
+.glass-input:focus {
+  border-color: #06b6d4;
+  box-shadow: 0 0 10px rgba(6, 182, 212, 0.2);
+}
+
+/* Segment Progress Visualizers */
+.segment-bar {
+  position: relative;
+  background: var(--input-border);
+  border-radius: 4px;
+  overflow: hidden;
+  height: 12px;
+  transition: background-color 0.3s ease;
+}
+
+.segment-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #06b6d4);
+  transition: width 0.2s ease-out;
+  position: relative;
+}
+
+.segment-fill.completed {
+  background: linear-gradient(90deg, #10b981, #059669);
+}
+
+.segment-fill.active::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.25) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.glow-text {
+  text-shadow: 0 0 8px var(--color-glow);
+}
+
+.glow-btn {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glow-btn:hover {
+  box-shadow: 0 0 15px rgba(6, 182, 212, 0.45);
+  border-color: #06b6d4;
+}
