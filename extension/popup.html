@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Blaze Downloader</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="logo-icon">⚡</div>
+        <div class="brand-text">
+          <h1>Blaze</h1>
+          <span class="subtext">Downloader Extension</span>
+        </div>
+      </div>
+      <div class="status-badge" id="statusBadge">
+        <span class="dot" id="statusDot"></span>
+        <span id="statusText">Checking...</span>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="content">
+      <!-- Toggle Card -->
+      <div class="card toggle-card">
+        <div class="toggle-info">
+          <span class="label-title">Download Interception</span>
+          <span class="label-desc">Catch browser download links automatically</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="enableToggle" checked />
+          <span class="slider round"></span>
+        </label>
+      </div>
+
+      <!-- Quick Add URL -->
+      <div class="card">
+        <span class="card-title">Send URL to Blaze</span>
+        <div class="input-group">
+          <input type="url" id="urlInput" placeholder="Paste download URL here..." />
+          <button id="sendBtn" class="btn btn-primary">Send</button>
+        </div>
+        <div id="feedbackMsg" class="feedback"></div>
+      </div>
+
+      <!-- Interception Rules -->
+      <div class="card">
+        <span class="card-title">File Type Filters</span>
+        <div class="checkbox-row">
+          <label class="checkbox-container">
+            <input type="checkbox" id="interceptAllCheck" />
+            <span class="checkmark"></span>
+            Intercept ALL file downloads
+          </label>
+        </div>
+        <div class="field-group" id="extGroup">
+          <label for="extInput">Target Extensions (comma separated):</label>
+          <input type="text" id="extInput" placeholder="zip, exe, mp4, iso..." />
+        </div>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <button id="testBtn" class="btn btn-outline">Check Connection</button>
+      <span class="version">v1.0.0</span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

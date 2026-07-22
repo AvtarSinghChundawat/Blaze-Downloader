@@ -1,11 +1,133 @@
 const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
 const SegmentDownloader = require('./downloader');
 
 let mainWindow;
 const activeDownloads = new Map(); // id -> SegmentDownloader
 let downloadsRegistry = []; // List of all registered downloads
+
+// Protocol client registration (blaze://)
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient('blaze', process.execPath, [path.resolve(process.argv[1])]);
+  }
+} else {
+  app.setAsDefaultProtocolClient('blaze');
+}
+
+// Single instance lock
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (event, commandLine) => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+    const url = commandLine.find(arg => arg.startsWith('blaze://'));
+    if (url) {
+      handleProtocolUrl(url);
+    }
+  });
+}
+
+function bringWindowToFront() {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  mainWindow.setAlwaysOnTop(true);
+  mainWindow.setAlwaysOnTop(false);
+}
+
+function handleProtocolUrl(rawUrl) {
+  try {
+    let downloadUrl = '';
+    let fileName = '';
+    let referrer = '';
+    let cookies = '';
+    if (rawUrl.includes('blaze://add?')) {
+      const queryPart = rawUrl.split('blaze://add?')[1] || '';
+      const params = new URLSearchParams(queryPart);
+      downloadUrl = params.get('url') || '';
+      fileName = params.get('filename') || params.get('fileName') || '';
+      referrer = params.get('referrer') || '';
+      cookies = params.get('cookies') || '';
+    } else if (rawUrl.startsWith('blaze://')) {
+      downloadUrl = rawUrl.replace('blaze://', '');
+      if (downloadUrl.startsWith('http/') || downloadUrl.startsWith('https/')) {
+        downloadUrl = downloadUrl.replace(/^http\//, 'http://').replace(/^https\//, 'https://');
+      }
+    }
+    if (downloadUrl && mainWindow) {
+      bringWindowToFront();
+      mainWindow.webContents.send('external-download', { url: downloadUrl, fileName, referrer, cookies, autoStart: false });
+    }
+  } catch (err) {
+    console.error('Error handling protocol URL:', err);
+  }
+}
+
+function startApiServer() {
+  const PORT = 3055;
+  const server = http.createServer((req, res) => {
+    // CORS Headers
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    if (req.method === 'GET' && req.url === '/api/ping') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', version: '0.1.0', app: 'Blaze Downloader' }));
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/api/catch-download') {
+      let body = '';
+      req.on('data', chunk => { body += chunk.toString(); });
+      req.on('end', () => {
+        try {
+          const data = JSON.parse(body || '{}');
+          const { url, fileName, referrer, cookies } = data;
+          if (url && mainWindow) {
+            bringWindowToFront();
+            mainWindow.webContents.send('external-download', { url, fileName, referrer, cookies, autoStart: false });
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, message: 'Download received' }));
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: 'Invalid JSON' }));
+        }
+      });
+      return;
+    }
+
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Not found' }));
+  });
+
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`Blaze API server port ${PORT} is already in use.`);
+    } else {
+      console.error('Blaze API server error:', err);
+    }
+  });
+
+  server.listen(PORT, '127.0.0.1', () => {
+    console.log(`Blaze Downloader HTTP API server running at http://127.0.0.1:${PORT}`);
+  });
+}
 
 // Load registry on startup
 const registryPath = path.join(app.getPath('userData'), 'blaze_downloads.json');
@@ -76,6 +198,15 @@ function createWindow() {
 app.whenReady().then(() => {
   loadRegistry();
   createWindow();
+  startApiServer();
+
+  // Handle initial protocol launch argument if app started via blaze:// link
+  const initialUrl = process.argv.find(arg => arg.startsWith('blaze://'));
+  if (initialUrl && mainWindow) {
+    mainWindow.webContents.once('did-finish-load', () => {
+      handleProtocolUrl(initialUrl);
+    });
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -145,7 +276,7 @@ ipcMain.handle('get-downloads', () => {
   });
 });
 
-ipcMain.handle('add-download', async (event, { url, fileName, customDir }) => {
+ipcMain.handle('add-download', async (event, { url, fileName, customDir, referrer, cookies }) => {
   const id = Date.now().toString();
   const dir = customDir || appSettings.downloadDir;
   
@@ -155,7 +286,7 @@ ipcMain.handle('add-download', async (event, { url, fileName, customDir }) => {
   let rangesSupported = false;
   
   try {
-    const tempDownloader = new SegmentDownloader(url, path.join(dir, fileName || 'temp_probe'));
+    const tempDownloader = new SegmentDownloader(url, path.join(dir, fileName || 'temp_probe'), { referrer, cookies });
     const info = await tempDownloader.getInfo();
     finalFileName = fileName || info.filename;
     size = info.totalSize;
@@ -191,10 +322,12 @@ ipcMain.handle('add-download', async (event, { url, fileName, customDir }) => {
     percent: 0,
     status: 'QUEUED',
     dateAdded: new Date().toISOString(),
+    referrer: referrer || '',
+    cookies: cookies || '',
     speed: 0
   };
 
-  downloadsRegistry.push(downloadItem);
+  downloadsRegistry.unshift(downloadItem);
   saveRegistry();
   
   if (mainWindow) {
@@ -218,7 +351,9 @@ ipcMain.handle('start-download', (event, { id }) => {
   }
 
   const downloader = new SegmentDownloader(item.url, item.path, {
-    connections: appSettings.connections
+    connections: appSettings.connections,
+    referrer: item.referrer || '',
+    cookies: item.cookies || ''
   });
 
   activeDownloads.set(id, downloader);
@@ -303,6 +438,85 @@ ipcMain.handle('delete-download', (event, { id, deleteFile }) => {
     mainWindow.webContents.send('downloads-updated', downloadsRegistry);
   }
   return true;
+});
+
+ipcMain.handle('delete-selected-downloads', (event, { ids, deleteFiles }) => {
+  if (!Array.isArray(ids) || ids.length === 0) return false;
+
+  const idSet = new Set(ids);
+
+  ids.forEach((id) => {
+    const downloader = activeDownloads.get(id);
+    if (downloader) {
+      try { downloader.pause(); } catch (e) {}
+      activeDownloads.delete(id);
+    }
+  });
+
+  if (deleteFiles) {
+    downloadsRegistry.forEach((item) => {
+      if (idSet.has(item.id)) {
+        try {
+          if (item.path && fs.existsSync(item.path)) {
+            fs.unlinkSync(item.path);
+          }
+          const meta = item.path + '.blaze.json';
+          if (fs.existsSync(meta)) {
+            fs.unlinkSync(meta);
+          }
+        } catch (e) {}
+      }
+    });
+  }
+
+  downloadsRegistry = downloadsRegistry.filter(item => !idSet.has(item.id));
+  saveRegistry();
+
+  if (mainWindow) {
+    mainWindow.webContents.send('downloads-updated', downloadsRegistry);
+  }
+  return true;
+});
+
+ipcMain.handle('clear-all-downloads', (event, { deleteFiles }) => {
+  activeDownloads.forEach((downloader) => {
+    try { downloader.pause(); } catch (e) {}
+  });
+  activeDownloads.clear();
+
+  if (deleteFiles) {
+    downloadsRegistry.forEach((item) => {
+      try {
+        if (item.path && fs.existsSync(item.path)) {
+          fs.unlinkSync(item.path);
+        }
+        const meta = item.path + '.blaze.json';
+        if (fs.existsSync(meta)) {
+          fs.unlinkSync(meta);
+        }
+      } catch (e) {}
+    });
+  }
+
+  downloadsRegistry = [];
+  saveRegistry();
+
+  if (mainWindow) {
+    mainWindow.webContents.send('downloads-updated', downloadsRegistry);
+  }
+  return true;
+});
+
+ipcMain.handle('open-file', async (event, { filePath }) => {
+  if (fs.existsSync(filePath)) {
+    const error = await shell.openPath(filePath);
+    if (error) {
+      console.error('Error opening file:', error);
+      return false;
+    }
+    return true;
+  }
+  return false;
 });
 
 ipcMain.handle('open-file-location', (event, { filePath }) => {

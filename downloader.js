@@ -4,11 +4,27 @@ const https = require('https');
 const path = require('path');
 const { EventEmitter } = require('events');
 
+const DEFAULT_BROWSER_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Sec-Ch-Ua': '"Chromium";v="128", "Not;A=Brand";v="24", "Google Chrome";v="128"',
+  'Sec-Ch-Ua-Mobile': '?0',
+  'Sec-Ch-Ua-Platform': '"Windows"',
+  'Sec-Fetch-Dest': 'document',
+  'Sec-Fetch-Mode': 'navigate',
+  'Sec-Fetch-Site': 'cross-site',
+  'Sec-Fetch-User': '?1',
+  'Upgrade-Insecure-Requests': '1'
+};
+
 class SegmentDownloader extends EventEmitter {
   constructor(url, destPath, options = {}) {
     super();
     this.url = url;
     this.destPath = destPath;
+    this.referrer = options.referrer || '';
+    this.cookies = options.cookies || '';
     this.metaPath = destPath + '.blaze.json';
     this.connectionCount = options.connections || 8;
     this.retryLimit = options.retryLimit || 5;
@@ -28,50 +44,54 @@ class SegmentDownloader extends EventEmitter {
     this.lastTickTime = Date.now();
     this.speedInterval = null;
   }
+
+  getHeaders() {
+    const h = { ...DEFAULT_BROWSER_HEADERS };
+    if (this.referrer) {
+      h['Referer'] = this.referrer;
+    }
+    if (this.cookies) {
+      h['Cookie'] = this.cookies;
+    }
+    return h;
+  }
+
+  async resolveFinalUrl(targetUrl, maxRedirects = 10) {
+    let currentUrl = targetUrl;
+    let redirectCount = 0;
+
+    while (redirectCount < maxRedirects) {
+      try {
+        const parsedUrl = new URL(currentUrl);
+        const client = parsedUrl.protocol === 'https:' ? https : http;
+        const requestHeaders = this.getHeaders();
+
+        const res = await new Promise((resolve, reject) => {
+          const req = client.request(currentUrl, { method: 'HEAD', headers: requestHeaders, timeout: 8000 }, resolve);
+          req.on('error', reject);
+          req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+          req.end();
+        });
+
+        if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+          const redirectUrl = new URL(res.headers.location, currentUrl).href;
+          currentUrl = redirectUrl;
+          redirectCount++;
+        } else {
+          break;
+        }
+      } catch (e) {
+        break;
+      }
+    }
+    return currentUrl;
+  }
   
   async getInfo() {
-    return new Promise((resolve, reject) => {
-      const parsedUrl = new URL(this.url);
-      const client = parsedUrl.protocol === 'https:' ? https : http;
-      
-      const options = {
-        method: 'HEAD',
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        },
-        timeout: 10000
-      };
-      
-      const req = client.request(this.url, options, (res) => {
-        if (res.statusCode >= 400 && res.statusCode !== 405) {
-          // If status code is an error, try with GET
-          this.probeWithGet().then(resolve).catch(reject);
-        } else {
-          const contentLength = res.headers['content-length'];
-          const acceptRanges = res.headers['accept-ranges'];
-          
-          this.totalSize = contentLength ? parseInt(contentLength, 10) : 0;
-          this.acceptRanges = acceptRanges === 'bytes' || res.headers['content-range'] !== undefined;
-          
-          resolve({
-            totalSize: this.totalSize,
-            acceptRanges: this.acceptRanges,
-            filename: this.getFilenameFromHeaders(res.headers) || path.basename(parsedUrl.pathname) || 'download'
-          });
-        }
-      });
-      
-      req.on('error', (err) => {
-        this.probeWithGet().then(resolve).catch(reject);
-      });
-      
-      req.on('timeout', () => {
-        req.destroy();
-        this.probeWithGet().then(resolve).catch(reject);
-      });
-      
-      req.end();
-    });
+    try {
+      this.url = await this.resolveFinalUrl(this.url);
+    } catch (e) {}
+    return this.probeWithGet();
   }
   
   async probeWithGet() {
@@ -82,13 +102,21 @@ class SegmentDownloader extends EventEmitter {
       const options = {
         method: 'GET',
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Range': 'bytes=0-0'
+          ...this.getHeaders(),
+          'Range': 'bytes=0-1024'
         },
         timeout: 10000
       };
       
       const req = client.request(this.url, options, (res) => {
+        if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+          try {
+            this.url = new URL(res.headers.location, this.url).href;
+          } catch (e) {}
+          this.probeWithGet().then(resolve).catch(reject);
+          return;
+        }
+
         const isRangeSupported = res.statusCode === 206;
         let totalSize = 0;
         
@@ -102,6 +130,15 @@ class SegmentDownloader extends EventEmitter {
         
         if (!totalSize && res.headers['content-length'] && !isRangeSupported) {
           totalSize = parseInt(res.headers['content-length'], 10);
+        }
+
+        const contentType = (res.headers['content-type'] || '').toLowerCase();
+        const isMediaExt = /\.(mp4|mkv|avi|mov|wmv|flv|webm|zip|rar|7z|iso|exe|msi|apk|tar|gz|pdf)$/i.test(this.destPath || this.filename || parsedUrl.pathname);
+        const isHtmlOrJson = contentType.includes('text/html') || contentType.includes('application/json');
+
+        if (isMediaExt && isHtmlOrJson && totalSize < 10000) {
+          reject(new Error(`Server returned HTML response (${totalSize} bytes) instead of media file. Access to CDN link may be expired or blocked.`));
+          return;
         }
         
         resolve({
@@ -256,7 +293,7 @@ class SegmentDownloader extends EventEmitter {
       const client = parsedUrl.protocol === 'https:' ? https : http;
       
       const headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        ...this.getHeaders()
       };
       
       if (this.acceptRanges && segment.end !== null) {
@@ -270,6 +307,14 @@ class SegmentDownloader extends EventEmitter {
       };
       
       const req = client.get(this.url, options, (res) => {
+        if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+          try {
+            this.url = new URL(res.headers.location, this.url).href;
+          } catch (e) {}
+          this.downloadSegment(segment).then(resolve).catch(reject);
+          return;
+        }
+
         if (this.acceptRanges && res.statusCode !== 206) {
           // If range was requested but server ignored and returned 200, we should adapt
           if (res.statusCode === 200) {

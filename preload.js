@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startDownload: (data) => ipcRenderer.invoke('start-download', data),
   pauseDownload: (data) => ipcRenderer.invoke('pause-download', data),
   deleteDownload: (data) => ipcRenderer.invoke('delete-download', data),
+  deleteSelectedDownloads: (data) => ipcRenderer.invoke('delete-selected-downloads', data),
+  clearAllDownloads: (data) => ipcRenderer.invoke('clear-all-downloads', data),
+  openFile: (data) => ipcRenderer.invoke('open-file', data),
   openFileLocation: (data) => ipcRenderer.invoke('open-file-location', data),
 
   // Subscriptions (Main -> Renderer)
@@ -39,5 +42,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const subscription = (event, data) => callback(data);
     ipcRenderer.on('download-error', subscription);
     return () => ipcRenderer.removeListener('download-error', subscription);
+  },
+  onExternalDownload: (callback) => {
+    const subscription = (event, data) => callback(data);
+    ipcRenderer.on('external-download', subscription);
+    return () => ipcRenderer.removeListener('external-download', subscription);
   }
 });

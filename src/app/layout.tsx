@@ -21,9 +21,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${poppins.variable} font-sans h-full antialiased`}
+      className={`${poppins.variable} font-sans h-full w-full antialiased overflow-hidden`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="h-screen w-screen flex flex-col overflow-hidden select-none">{children}</body>
     </html>
   );
 }
